@@ -2,7 +2,7 @@
     "name": "ls_oltp_database",
     "type": "Microsoft.DataFactory/factories/linkedservices",
     "properties": {
-        "description": "Connection to transactional OLTP PostgreSQL database via Azure Key Vault",
+        "description": "Secure connection to Neon PostgreSQL billing_oltp database using Azure Key Vault",
         "type": "PostgreSql",
         "typeProperties": {
             "server": "@{linkedService().DB_SERVER}",
@@ -22,17 +22,16 @@
         "parameters": {
             "DB_SERVER": {
                 "type": "string",
-                "defaultValue": "ep-prod-oltp.neon.tech"
+                "defaultValue": "ep-bold-wave-aoq3m6gy-pooler.c-2.ap-southeast-1.aws.neon.tech"
             },
             "DB_NAME": {
                 "type": "string",
-                "defaultValue": "neondb"
+                "defaultValue": "finguard-db"
             },
             "DB_USER": {
                 "type": "string",
-                "defaultValue": "neondb_owner"
+                "defaultValue": "finguard-db_owner"
             }
         }
     }
 }
-
