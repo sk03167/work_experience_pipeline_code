@@ -57,6 +57,11 @@
 # MAGIC URL 'abfss://gold@stlakehousedevsk01.dfs.core.windows.net/'
 # MAGIC WITH (STORAGE CREDENTIAL cred_adls_lakehouse_dev)
 # MAGIC COMMENT 'External location for Gold star schema dimensional tables';
+# MAGIC
+# MAGIC -- 4. Grant Permissions to Workspace Users & Automated Pipelines
+# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_bronze_lakehouse TO `account users`;
+# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_silver_lakehouse TO `account users`;
+# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_gold_lakehouse TO `account users`;
 
 # COMMAND ----------
 
