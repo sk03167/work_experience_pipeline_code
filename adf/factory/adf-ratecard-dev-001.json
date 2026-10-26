@@ -1,0 +1,15 @@
+{
+	"name": "adf-ratecard-dev-001",
+	"properties": {
+		"trustModeClaimForMi": {
+			"value": "Disabled",
+			"editable": true
+		}
+	},
+	"location": "eastus2",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "8d5fc1f3-9104-46c1-8085-7a17dd9469d9",
+		"tenantId": "b85559bf-9077-45ed-92f3-6abc9b58f26e"
+	}
+}
