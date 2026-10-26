@@ -32,7 +32,7 @@
                 "typeProperties": {
                     "source": {
                         "type": "PostgreSqlSource",
-                        "query": "SELECT pricing_rule_id, customer_id, part_number, subscription_id, subscription_line_id, date_start, date_end, tier_pricing_rules, created_at, updated_at FROM billing_oltp.subscription_ratecard_rules WHERE updated_at > '@{pipeline().parameters.p_watermark_timestamp}'"
+                        "query": "SELECT pricing_rule_id, customer_id, part_number, subscription_id, subscription_line_id, date_start, date_end, to_json(tier_pricing_rules) AS tier_pricing_rules, created_at, updated_at FROM billing_oltp.subscription_ratecard_rules WHERE updated_at > '@{pipeline().parameters.p_watermark_timestamp}'"
                     },
                     "sink": {
                         "type": "ParquetSink",
