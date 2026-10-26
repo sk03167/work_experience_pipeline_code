@@ -77,3 +77,39 @@ Enterprise subscription ratecards feature graduating volume discounts where the 
   ```
 - Generated deterministic surrogate hashes (`SHA-256(pricing_rule_id || tier_number)`) to ensure idempotent outrigger dimension joins in the Gold OLAP layer.
 
+---
+
+## Challenge 4: Unity Catalog External Location Governance vs. Legacy DBFS Mount Access
+
+### 1. The Context
+In modern Databricks Unity Catalog deployments, data access to cloud object storage (ADLS Gen2) transitions away from legacy DBFS mounts (`/mnt/...`) and storage keys to identity-based governance using **Storage Credentials** (Azure Managed Identity Access Connectors) and **External Locations**.
+
+### 2. The Problem
+When the Databricks notebook job was triggered by the Azure Data Factory orchestrator, reading the Bronze Parquet files landed in ADLS Gen2 threw:
+```text
+com.databricks.sql.managedcatalog.acl.UnauthorizedAccessException: 
+PERMISSION_DENIED: User does not have READ FILES on External Location 'loc_bronze_lakehouse'.
+```
+When the script attempted a fallback to a legacy DBFS mount path (`/mnt/bronze/subscription_ratecard_rules`), the execution failed with:
+```text
+com.databricks.backend.daemon.data.client.DbfsUnsupportedOperationSparkException: 
+[DBFS_DISABLED] Public DBFS root is disabled. Access is denied on path: /mnt/bronze/subscription_ratecard_rules
+SQLSTATE: 56038
+```
+
+### 3. Root Cause
+1. **Unity Catalog Authorization Model**: Creating an External Location (`CREATE EXTERNAL LOCATION loc_bronze_lakehouse...`) registers the object in the Unity Catalog metastore, but assigns privileges **strictly to the creating principal/metastore admin**. Automated jobs running under distinct pipeline service principals or workspace identities have zero default permissions on external locations.
+2. **Zero-Trust Hardening (`[DBFS_DISABLED]`)**: Enterprise-grade Lakehouses deliberately enforce `[DBFS_DISABLED]`, completely deprecating root DBFS writes and unmanaged mounts to prevent credential leakage and untracked data sprawl.
+
+### 4. Architectural Solution
+Rather than re-enabling legacy DBFS or weakening storage firewalls:
+- **Explicit Unity Catalog RBAC Grants**: Configured granular access control directly on the Unity Catalog External Locations, allowing automated pipeline identities and authorized user groups to read/write without needing storage account keys:
+  ```sql
+  GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_bronze_lakehouse TO `account users`;
+  GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_silver_lakehouse TO `account users`;
+  GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_gold_lakehouse TO `account users`;
+  ```
+- **Storage Credential Decoupling**: Storage access is securely delegated through the Azure Databricks Access Connector Managed Identity (`access-connector-databricks-dev`), ensuring no storage access keys or tokens reside in application code or notebook environments.
+- **Fail-Fast Direct ABFSS Paths**: Standardized all Databricks PySpark pipelines to read directly from governed ABFSS URIs (`abfss://<container>@<storage_account>.dfs.core.windows.net/<path>`), eliminating deprecated mount dependencies.
+
+
