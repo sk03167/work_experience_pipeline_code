@@ -1,0 +1,12 @@
+{
+    "name": "ls_azure_key_vault",
+    "type": "Microsoft.DataFactory/factories/linkedservices",
+    "properties": {
+        "description": "Secure link to Azure Key Vault using Managed Identity",
+        "type": "AzureKeyVault",
+        "typeProperties": {
+            "baseUrl": "https://kv-ratecard-dev-sk01.vault.azure.net/"
+        }
+    }
+}
+

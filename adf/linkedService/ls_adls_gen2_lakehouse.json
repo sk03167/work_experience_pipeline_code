@@ -1,0 +1,12 @@
+{
+    "name": "ls_adls_gen2_lakehouse",
+    "type": "Microsoft.DataFactory/factories/linkedservices",
+    "properties": {
+        "description": "ADLS Gen2 storage linked service using Managed Identity for Bronze/Silver/Gold Lakehouse",
+        "type": "AzureBlobFS",
+        "typeProperties": {
+            "url": "https://stlakehousedevsk01.dfs.core.windows.net"
+        }
+    }
+}
+

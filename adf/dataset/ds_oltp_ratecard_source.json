@@ -1,0 +1,17 @@
+{
+    "name": "ds_oltp_ratecard_source",
+    "properties": {
+        "description": "Source dataset pointing to Neon Postgres billing_oltp schema via Key Vault credentials",
+        "linkedServiceName": {
+            "referenceName": "ls_oltp_database",
+            "type": "LinkedServiceReference"
+        },
+        "type": "PostgreSqlTable",
+        "schema": [],
+        "typeProperties": {
+            "schema": "billing_oltp",
+            "table": "subscription_ratecard_rules"
+        }
+    }
+}
+

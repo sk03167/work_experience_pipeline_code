@@ -1,0 +1,30 @@
+{
+    "name": "ls_azure_databricks",
+    "type": "Microsoft.DataFactory/factories/linkedservices",
+    "properties": {
+        "description": "Azure Databricks Single-Node Job Cluster for cost-efficient Medallion transformations",
+        "type": "AzureDatabricks",
+        "typeProperties": {
+            "domain": "@{linkedService().DATABRICKS_URL}",
+            "authentication": "MSI",
+            "newClusterNodeType": "Standard_D4ds_v5",
+            "newClusterNumOfWorkers": "0",
+            "newClusterSparkConf": {
+                "spark.master": "local[*]",
+                "spark.databricks.cluster.profile": "singleNode"
+            },
+            "newClusterCustomTags": {
+                "ResourceClass": "SingleNode",
+                "Environment": "dev",
+                "Project": "ratecard-pipeline"
+            },
+            "newClusterSparkVersion": "14.3.x-scala2.12"
+        },
+        "parameters": {
+            "DATABRICKS_URL": {
+                "type": "string",
+                "defaultValue": "https://adb-7405615524664227.7.azuredatabricks.net"
+            }
+        }
+    }
+}

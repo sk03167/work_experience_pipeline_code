@@ -1,0 +1,68 @@
+{
+    "name": "pl_ratecard_master_orchestrator",
+    "properties": {
+        "description": "Master Pipeline orchestrating OLTP extraction, ADLS Bronze staging, and Databricks Silver/Gold execution with conformed dim lookups",
+        "parameters": {
+            "p_watermark_timestamp": {
+                "type": "string",
+                "defaultValue": "1970-01-01 00:00:00"
+            },
+            "p_environment": {
+                "type": "string",
+                "defaultValue": "prod"
+            }
+        },
+        "activities": [
+            {
+                "name": "act_copy_oltp_ratecard_to_bronze",
+                "type": "Copy",
+                "description": "Reads delta changes from OLTP and writes directly to ADLS Gen2 Bronze parquet/delta staging",
+                "inputs": [
+                    {
+                        "referenceName": "ds_oltp_ratecard_source",
+                        "type": "DatasetReference"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "referenceName": "ds_adls_bronze_ratecard_sink",
+                        "type": "DatasetReference"
+                    }
+                ],
+                "typeProperties": {
+                    "source": {
+                        "type": "PostgreSqlSource",
+                        "query": "SELECT pricing_rule_id, customer_id, part_number, subscription_id, subscription_line_id, date_start, date_end, tier_pricing_rules, created_at, updated_at FROM billing_oltp.subscription_ratecard_rules WHERE updated_at > '@{pipeline().parameters.p_watermark_timestamp}'"
+                    },
+                    "sink": {
+                        "type": "ParquetSink",
+                        "storeSettings": {
+                            "type": "AzureBlobFSWriteSettings"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "act_run_databricks_silver_gold_processing",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "act_copy_oltp_ratecard_to_bronze",
+                        "dependencyConditions": ["Succeeded"]
+                    }
+                ],
+                "linkedServiceName": {
+                    "referenceName": "ls_azure_databricks",
+                    "type": "LinkedServiceReference"
+                },
+                "typeProperties": {
+                    "notebookPath": "/Shared/ratecard_pipeline/02_silver_gold_transformation",
+                    "baseParameters": {
+                        "execution_date": "@utcnow()",
+                        "env": "@pipeline().parameters.p_environment"
+                    }
+                }
+            }
+        ]
+    }
+}

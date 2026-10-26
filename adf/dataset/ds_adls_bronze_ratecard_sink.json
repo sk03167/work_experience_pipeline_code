@@ -1,0 +1,21 @@
+{
+    "name": "ds_adls_bronze_ratecard_sink",
+    "properties": {
+        "description": "ADLS Gen2 Bronze landing zone for ratecards in Parquet/Delta staging format",
+        "linkedServiceName": {
+            "referenceName": "ls_adls_gen2_lakehouse",
+            "type": "LinkedServiceReference"
+        },
+        "type": "Parquet",
+        "typeProperties": {
+            "location": {
+                "type": "AzureBlobFSLocation",
+                "fileSystem": "bronze",
+                "folderPath": "subscription_ratecard_rules"
+            },
+            "compressionCodec": "snappy"
+        },
+        "schema": []
+    }
+}
+
