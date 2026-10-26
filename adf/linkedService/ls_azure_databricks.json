@@ -14,7 +14,7 @@
 			"domain": "@{linkedService().DATABRICKS_URL}",
 			"authentication": "MSI",
 			"workspaceResourceId": "/subscriptions/09af7dc6-457c-4086-be07-9669631f8f04/resourceGroups/rg-ratecard-lakehouse-dev/providers/Microsoft.Databricks/workspaces/adb-ratecard-dev-001",
-			"newClusterNodeType": "Standard_D4ds_v5",
+			"newClusterNodeType": "Standard_DS3_v2",
 			"newClusterNumOfWorker": "1",
 			"newClusterSparkConf": {
 				"spark.master": "local[*]"
