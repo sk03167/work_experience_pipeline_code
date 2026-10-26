@@ -1,35 +1,18 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # 00_setup_conformed_dims: Seed Conformed Dimensions (Gold Layer)
+# MAGIC # 00_setup_conformed_dims: Seed Conformed Dimensions in Databricks Catalog
 # MAGIC
 # MAGIC **Author:** Shivansh Kumar (Senior Data Engineer)  
-# MAGIC **Layer:** Gold (Conformed Dimension Store)  
+# MAGIC **Layer:** Gold (Dimensional Serving / Catalog Tables)  
 # MAGIC
-# MAGIC ### Overview:
-# MAGIC Initializes and seeds pre-existing enterprise conformed dimensions:
-# MAGIC - `dim_customer` (`customer_key` [SK], `customer_id` [BK], name, region, industry)
-# MAGIC - `dim_part` (`part_key` [SK], `part_number` [BK], name, family, unit_of_measure)
-# MAGIC
-# MAGIC Maps default `-1` surrogate keys for late-arriving / unknown records.
-
-# COMMAND ----------
-
-# Storage paths pointing to your ADLS Gen2 Lakehouse (or DBFS / Delta Lake tables)
-# In Azure Databricks with Unity Catalog / Storage, you can write directly to abfss:// or table names
-STORAGE_ACCOUNT = "stlakehousedevsk01"
-GOLD_BASE_PATH = f"abfss://gold@{STORAGE_ACCOUNT}.dfs.core.windows.net"
-
-# Fallback path if direct ABFSS storage credentials are not yet mounted on the cluster:
-LOCAL_DELTA_PATH = "/tmp/lakehouse/gold"
-
-# Let's write as managed Delta tables or direct path
-dim_cust_path = f"{GOLD_BASE_PATH}/dim_customer"
-dim_part_path = f"{GOLD_BASE_PATH}/dim_part"
+# MAGIC Creates and seeds the pre-existing enterprise conformed dimension tables in the Databricks Metastore:
+# MAGIC - `dim_customer` (`customer_key` [SK], `customer_id` [BK], customer_name, country_code, industry_segment, is_active)
+# MAGIC - `dim_part` (`part_key` [SK], `part_number` [BK], product_name, product_family, unit_of_measure, is_active)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 1. Seed Customer Conformed Dimension (`dim_customer`)
+# MAGIC ### 1. Register & Seed `dim_customer` (Catalog Table)
 
 # COMMAND ----------
 
@@ -48,21 +31,20 @@ customers_data = [
 cust_columns = ["customer_key", "customer_id", "customer_name", "country_code", "industry_segment", "is_active"]
 df_cust = spark.createDataFrame(customers_data, cust_columns)
 
-# Write to Delta table
-try:
-    df_cust.write.format("delta").mode("overwrite").save(dim_cust_path)
-    print(f"Successfully seeded dim_customer to ADLS: {dim_cust_path}")
-except Exception as e:
-    print(f"ABFSS direct write fell back to local delta table: {e}")
-    df_cust.write.format("delta").mode("overwrite").saveAsTable("dim_customer")
-    print("Successfully created managed table: dim_customer")
+# Save as a real Databricks Catalog Delta Table
+df_cust.write.format("delta").mode("overwrite").saveAsTable("dim_customer")
+print("Registered and populated catalog table: default.dim_customer")
 
-display(df_cust)
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- Verify dim_customer via standard SQL
+# MAGIC SELECT * FROM dim_customer ORDER BY customer_key;
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### 2. Seed Product / Part Conformed Dimension (`dim_part`)
+# MAGIC ### 2. Register & Seed `dim_part` (Catalog Table)
 
 # COMMAND ----------
 
@@ -81,12 +63,12 @@ parts_data = [
 parts_columns = ["part_key", "part_number", "product_name", "product_family", "unit_of_measure", "is_active"]
 df_parts = spark.createDataFrame(parts_data, parts_columns)
 
-try:
-    df_parts.write.format("delta").mode("overwrite").save(dim_part_path)
-    print(f"Successfully seeded dim_part to ADLS: {dim_part_path}")
-except Exception as e:
-    print(f"ABFSS direct write fell back to local delta table: {e}")
-    df_parts.write.format("delta").mode("overwrite").saveAsTable("dim_part")
-    print("Successfully created managed table: dim_part")
+# Save as a real Databricks Catalog Delta Table
+df_parts.write.format("delta").mode("overwrite").saveAsTable("dim_part")
+print("Registered and populated catalog table: default.dim_part")
 
-display(df_parts)
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- Verify dim_part via standard SQL
+# MAGIC SELECT * FROM dim_part ORDER BY part_key;
