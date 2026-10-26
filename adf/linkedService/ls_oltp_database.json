@@ -1,38 +1,36 @@
 {
-    "name": "ls_oltp_database",
-    "type": "Microsoft.DataFactory/factories/linkedservices",
-    "properties": {
-        "description": "Connection to transactional OLTP PostgreSQL database via Azure Key Vault",
-        "type": "PostgreSql",
-        "typeProperties": {
-            "server": "@{linkedService().DB_SERVER}",
-            "port": 5432,
-            "database": "@{linkedService().DB_NAME}",
-            "username": "@{linkedService().DB_USER}",
-            "sslMode": 1,
-            "password": {
-                "type": "AzureKeyVaultSecret",
-                "store": {
-                    "referenceName": "ls_azure_key_vault",
-                    "type": "LinkedServiceReference"
-                },
-                "secretName": "oltp-db-password"
-            }
-        },
-        "parameters": {
-            "DB_SERVER": {
-                "type": "string",
-                "defaultValue": "ep-prod-oltp.neon.tech"
-            },
-            "DB_NAME": {
-                "type": "string",
-                "defaultValue": "neondb"
-            },
-            "DB_USER": {
-                "type": "string",
-                "defaultValue": "neondb_owner"
-            }
-        }
-    }
+	"name": "ls_oltp_database",
+	"properties": {
+		"description": "Connection to transactional OLTP PostgreSQL database via Azure Key Vault",
+		"parameters": {
+			"DB_SERVER": {
+				"type": "string",
+				"defaultValue": "ep-prod-oltp.neon.tech"
+			},
+			"DB_NAME": {
+				"type": "string",
+				"defaultValue": "neondb"
+			},
+			"DB_USER": {
+				"type": "string",
+				"defaultValue": "neondb_owner"
+			}
+		},
+		"annotations": [],
+		"type": "PostgreSql",
+		"typeProperties": {
+			"connectionString": "Host=@{linkedService().DB_SERVER};Port=5432;Database=@{linkedService().DB_NAME};UID=@{linkedService().DB_USER};EncryptionMethod=0",
+			"password": {
+				"type": "AzureKeyVaultSecret",
+				"store": {
+					"referenceName": "ls_azure_key_vault",
+					"type": "LinkedServiceReference"
+				},
+				"secretName": "oltp-db-password"
+			},
+			"port": 5432,
+			"sslMode": 1
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/linkedservices"
 }
-
