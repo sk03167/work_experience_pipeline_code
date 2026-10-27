@@ -19,12 +19,27 @@
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC CREATE STORAGE CREDENTIAL IF NOT EXISTS cred_adls_lakehouse_dev
-# MAGIC AZURE_MANAGED_IDENTITY (
-# MAGIC   RESOURCE_ID = '/subscriptions/09af7dc6-457c-4086-be07-9669631f8f04/resourceGroups/rg-ratecard-lakehouse-dev/providers/Microsoft.Databricks/accessConnectors/access-connector-databricks-dev'
-# MAGIC )
-# MAGIC COMMENT 'Managed identity storage credential for ADLS Gen2 lakehouse dev environment';
+# DBTITLE 1,Create storage credential
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import NotFound
+from databricks.sdk.service.catalog import AzureManagedIdentityRequest
+
+w = WorkspaceClient()
+credential_name = "cred_adls_lakehouse_dev"
+access_connector_id = "/subscriptions/09af7dc6-457c-4086-be07-9669631f8f04/resourceGroups/rg-ratecard-lakehouse-dev/providers/Microsoft.Databricks/accessConnectors/access-connector-databricks-dev"
+
+try:
+    cred = w.storage_credentials.get(name=credential_name)
+except NotFound:
+    cred = w.storage_credentials.create(
+        name=credential_name,
+        azure_managed_identity=AzureManagedIdentityRequest(
+            access_connector_id=access_connector_id
+        ),
+        comment="Managed identity storage credential for ADLS Gen2 lakehouse dev environment",
+    )
+
+display(cred.as_dict())
 
 # COMMAND ----------
 
@@ -74,4 +89,16 @@
 # MAGIC %sql
 # MAGIC -- List files in Bronze staging path landed by ADF
 # MAGIC LIST 'abfss://bronze@stlakehousedevsk01.dfs.core.windows.net/subscription_ratecard_rules';
+# MAGIC
 
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_bronze_lakehouse TO `account users`;
+# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_silver_lakehouse TO `account users`;
+# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_gold_lakehouse TO `account users`;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SHOW Groups
