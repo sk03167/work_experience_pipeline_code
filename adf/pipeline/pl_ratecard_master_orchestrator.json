@@ -1,13 +1,52 @@
 {
 	"name": "pl_ratecard_master_orchestrator",
 	"properties": {
-		"description": "Master Pipeline orchestrating OLTP extraction, ADLS Bronze staging, and Databricks Silver/Gold execution with parameterized 3-level catalog namespaces",
+		"description": "Master Pipeline orchestrating ADLS Checkpoint Watermark Lookup, OLTP delta extraction, ADLS Bronze staging, and Databricks Silver/Gold execution with 3-level catalog namespaces",
 		"activities": [
 			{
-				"name": "act_copy_oltp_ratecard_to_bronze",
-				"description": "Reads delta changes from OLTP and writes directly to ADLS Gen2 Bronze parquet staging",
-				"type": "Copy",
+				"name": "act_get_watermark",
+				"description": "Reads persistent high-watermark timestamp from ADLS Gen2 checkpoints container in 0.5s with zero compute cluster startup cost",
+				"type": "Lookup",
 				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 1,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "JsonSource",
+						"storeSettings": {
+							"type": "AzureBlobFSReadSettings",
+							"recursive": false,
+							"enablePartitionDiscovery": false
+						},
+						"formatSettings": {
+							"type": "JsonReadSettings"
+						}
+					},
+					"dataset": {
+						"referenceName": "ds_adls_checkpoint_watermark",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": true
+				}
+			},
+			{
+				"name": "act_copy_oltp_ratecard_to_bronze",
+				"description": "Reads delta changes from OLTP using persistent watermark and writes directly to ADLS Gen2 Bronze parquet staging",
+				"type": "Copy",
+				"dependsOn": [
+					{
+						"activity": "act_get_watermark",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
 				"policy": {
 					"retry": 0,
 					"retryIntervalInSeconds": 30,
@@ -19,7 +58,7 @@
 					"source": {
 						"type": "PostgreSqlSource",
 						"query": {
-							"value": "SELECT pricing_rule_id, customer_id, part_number, subscription_id, subscription_line_id, date_start, date_end, to_json(tier_pricing_rules) AS tier_pricing_rules, created_at, updated_at FROM billing_oltp.subscription_ratecard_rules WHERE updated_at > '@{pipeline().parameters.p_watermark_timestamp}'",
+							"value": "SELECT pricing_rule_id, customer_id, part_number, subscription_id, subscription_line_id, date_start, date_end, to_json(tier_pricing_rules) AS tier_pricing_rules, created_at, updated_at FROM billing_oltp.subscription_ratecard_rules WHERE updated_at > '@{coalesce(activity('act_get_watermark').output.firstRow.last_watermark, pipeline().parameters.p_watermark_timestamp)}'",
 							"type": "Expression"
 						}
 					},

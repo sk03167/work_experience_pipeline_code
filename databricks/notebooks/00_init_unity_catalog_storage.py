@@ -8,14 +8,9 @@
 # MAGIC ### Overview:
 # MAGIC Links the Azure Access Connector Managed Identity provisioned via Terraform into Unity Catalog:
 # MAGIC 1. Registers `cred_adls_lakehouse_dev` using Azure Managed Identity.
-# MAGIC 2. Registers External Locations for `bronze`, `silver`, and `gold` ADLS Gen2 containers.
+# MAGIC 2. Registers External Locations for `bronze`, `silver`, `gold`, and `checkpoints` ADLS Gen2 containers.
 # MAGIC 3. Grants passwordless, native high-throughput access to the Databricks Lakehouse engine.
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Cell 1: Register Storage Credential (Azure Managed Identity)
-# MAGIC *Uses the Access Connector Resource ID provisioned in Azure resource group `rg-ratecard-lakehouse-dev`.*
+# MAGIC 4. Seeds the initial baseline watermark checkpoint JSON file.
 
 # COMMAND ----------
 
@@ -43,14 +38,8 @@ display(cred.as_dict())
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC -- Verify Storage Credential
-# MAGIC DESCRIBE STORAGE CREDENTIAL cred_adls_lakehouse_dev;
-
-# COMMAND ----------
-
 # MAGIC %md
-# MAGIC ### Cell 2: Register External Locations (Bronze, Silver, Gold)
+# MAGIC ### Cell 2: Register External Locations (Bronze, Silver, Gold, Checkpoints)
 
 # COMMAND ----------
 
@@ -73,32 +62,37 @@ display(cred.as_dict())
 # MAGIC WITH (STORAGE CREDENTIAL cred_adls_lakehouse_dev)
 # MAGIC COMMENT 'External location for Gold star schema dimensional tables';
 # MAGIC
-# MAGIC -- 4. Grant Permissions to Workspace Users & Automated Pipelines
+# MAGIC -- 4. Checkpoints & Metadata Location
+# MAGIC CREATE EXTERNAL LOCATION IF NOT EXISTS loc_checkpoints_lakehouse
+# MAGIC URL 'abfss://checkpoints@stlakehousedevsk01.dfs.core.windows.net/'
+# MAGIC WITH (STORAGE CREDENTIAL cred_adls_lakehouse_dev)
+# MAGIC COMMENT 'External location for pipeline checkpoints and watermark files';
+# MAGIC
+# MAGIC -- 5. Grant Permissions to Workspace Users & Automated Pipelines
 # MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_bronze_lakehouse TO `account users`;
 # MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_silver_lakehouse TO `account users`;
 # MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_gold_lakehouse TO `account users`;
+# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_checkpoints_lakehouse TO `account users`;
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Cell 3: Validate Direct Lakehouse Access
-# MAGIC *Test listing files from the Bronze container landed by Azure Data Factory.*
+# MAGIC ### Cell 3: Seed Baseline Watermark File in Checkpoints
+
+# COMMAND ----------
+
+checkpoint_path = "abfss://checkpoints@stlakehousedevsk01.dfs.core.windows.net/watermarks/ratecard_watermark.json"
+initial_watermark_payload = '{"last_watermark": "1970-01-01 00:00:00", "pipeline_name": "pl_ratecard_master_orchestrator"}'
+
+try:
+    dbutils.fs.ls(checkpoint_path)
+    print(f"Checkpoint file already exists at: {checkpoint_path}")
+except Exception:
+    dbutils.fs.put(checkpoint_path, initial_watermark_payload, overwrite=True)
+    print(f"Successfully seeded baseline watermark at: {checkpoint_path}")
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC -- List files in Bronze staging path landed by ADF
 # MAGIC LIST 'abfss://bronze@stlakehousedevsk01.dfs.core.windows.net/subscription_ratecard_rules';
-# MAGIC
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_bronze_lakehouse TO `account users`;
-# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_silver_lakehouse TO `account users`;
-# MAGIC GRANT READ FILES, WRITE FILES ON EXTERNAL LOCATION loc_gold_lakehouse TO `account users`;
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC SHOW Groups

@@ -1,0 +1,21 @@
+{
+	"name": "ds_adls_checkpoint_watermark",
+	"properties": {
+		"description": "ADLS Gen2 Checkpoints container pointing to ratecard_watermark.json for pipeline watermark lookup",
+		"linkedServiceName": {
+			"referenceName": "ls_adls_gen2_lakehouse",
+			"type": "LinkedServiceReference"
+		},
+		"type": "Json",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"fileSystem": "checkpoints",
+				"folderPath": "watermarks",
+				"fileName": "ratecard_watermark.json"
+			}
+		},
+		"schema": {}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}
