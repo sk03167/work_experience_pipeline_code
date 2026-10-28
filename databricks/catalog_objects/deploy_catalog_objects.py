@@ -1,28 +1,30 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # deploy_catalog_objects: Upfront Lakehouse Schema & RBAC Provisioning
+# MAGIC # deploy_catalog_objects: Dynamic Schema & RBAC Migration Runner
 # MAGIC
 # MAGIC **Author:** Shivansh Kumar (Senior Data Engineer)  
-# MAGIC **Purpose:** Automated DDL and RBAC schema migrations decoupled from ETL runtime pipelines.  
-# MAGIC **Execution:** Run as part of CI/CD deployment or initial platform bootstrap.
+# MAGIC **Pattern:** Single Source of Truth (SSOT) DDL Execution  
 # MAGIC
-# MAGIC ### Objects Provisioned:
-# MAGIC 1. **Silver Layer:** `silver_ratecard_rules`, `silver_ratecard_tier_rules`
-# MAGIC 2. **Gold Layer:** `dim_customer`, `dim_part`, `dim_pricing_rule`, `dim_ratecard_tiers`
-# MAGIC 3. **Governance:** Schema-level inheritance grants (`SELECT`, `USE SCHEMA`)
+# MAGIC ### Mechanism:
+# MAGIC 1. Dynamically scans `.sql` files in `table_definitions/` and `permissions/`.
+# MAGIC 2. Interpolates runtime target catalog and schema parameters (`${catalog_name}`, `${schema_name}`).
+# MAGIC 3. Parses and executes DDL and RBAC statements in sorted order.
+# MAGIC 4. Provides granular audit logs of all provisioned lakehouse catalog objects.
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Cell 1: Environment Parameters
+# MAGIC ### Cell 1: Environment & Catalog Parameters
 
 # COMMAND ----------
 
 import os
+import re
 
+# Parameter widgets for multi-environment promotion (dev/qa/prod)
 try:
-    dbutils.widgets.text("catalog_name", "adb_ratecard_dev_001", "Unity Catalog Name")
-    dbutils.widgets.text("schema_name", "default", "Schema / Database Name")
+    dbutils.widgets.text("catalog_name", "adb_ratecard_dev_001", "Target Catalog")
+    dbutils.widgets.text("schema_name", "default", "Target Schema")
     dbutils.widgets.text("env", "dev", "Environment")
     
     catalog_name = dbutils.widgets.get("catalog_name")
@@ -33,143 +35,128 @@ except Exception:
     schema_name = "default"
     env = "dev"
 
-print(f"Deploying Catalog Objects | Catalog: {catalog_name} | Schema: {schema_name} | Env: {env}")
+print(f"=== Starting Lakehouse Schema Deployment ===")
+print(f"Environment : {env}")
+print(f"Catalog     : {catalog_name}")
+print(f"Schema      : {schema_name}")
 
-# Set current active namespace
+# Activate target catalog and schema context
 spark.sql(f"USE CATALOG {catalog_name}")
 spark.sql(f"USE SCHEMA {schema_name}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Cell 2: Deploy Silver Tables DDL
+# MAGIC ### Cell 2: SQL File Loader & Execution Helper
 
 # COMMAND ----------
 
-silver_ddl = f"""
-CREATE TABLE IF NOT EXISTS {catalog_name}.{schema_name}.silver_ratecard_rules (
-    pricing_rule_id STRING NOT NULL COMMENT 'Natural primary key from OLTP pricing rule',
-    customer_id STRING NOT NULL COMMENT 'Customer identifier for dimensional joins',
-    part_number STRING NOT NULL COMMENT 'Oracle/ERP Product part number',
-    subscription_id STRING COMMENT 'Upstream subscription contract ID',
-    subscription_line_id STRING COMMENT 'Specific line item within subscription',
-    date_start DATE NOT NULL COMMENT 'Effective start date of ratecard rule',
-    date_end DATE NOT NULL COMMENT 'Effective end date of ratecard rule',
-    updated_at TIMESTAMP COMMENT 'Source OLTP last update timestamp for watermark tracking'
-)
-USING DELTA
-COMMENT 'Silver Layer: Cleansed and deduplicated subscription ratecard headers';
-"""
-spark.sql(silver_ddl)
-print(f"Provisioned table: {catalog_name}.{schema_name}.silver_ratecard_rules")
+def find_catalog_dirs():
+    """Locate table_definitions and permissions folders reliably in Databricks Repos."""
+    possible_roots = [
+        # Relative to notebook location in Repos
+        os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else None,
+        os.getcwd(),
+        "/Workspace/Repos/dev/work_experience_pipeline_code/ratecard_pipeline/databricks/catalog_objects",
+        os.path.join(os.getcwd(), "ratecard_pipeline", "databricks", "catalog_objects"),
+        os.path.join(os.getcwd(), "databricks", "catalog_objects")
+    ]
+    
+    for root in possible_roots:
+        if root and os.path.exists(os.path.join(root, "table_definitions")):
+            return root
+            
+    raise FileNotFoundError("Could not locate 'table_definitions' directory. Please check workspace path.")
 
-silver_tiers_ddl = f"""
-CREATE TABLE IF NOT EXISTS {catalog_name}.{schema_name}.silver_ratecard_tier_rules (
-    tier_rule_id STRING NOT NULL COMMENT 'Surrogate SHA-256 hash (pricing_rule_id || tier_number)',
-    pricing_rule_id STRING NOT NULL COMMENT 'Foreign key to silver_ratecard_rules',
-    tier_number INT NOT NULL COMMENT 'Sequential tier index (1, 2, 3...)',
-    min_usage DECIMAL(18, 4) NOT NULL COMMENT 'Inclusive lower bound of tier usage volume',
-    max_usage DECIMAL(18, 4) NOT NULL COMMENT 'Upper bound of tier volume (999999999999.0 for unbounded final tier)',
-    unit_price DECIMAL(18, 6) NOT NULL COMMENT 'Unit rate within this usage boundary',
-    overage_price DECIMAL(18, 6) COMMENT 'Rate applied when usage exceeds tier bound if applicable',
-    is_overage_applicable BOOLEAN COMMENT 'Flag indicating if overage pricing applies',
-    silver_processed_at TIMESTAMP COMMENT 'Databricks ingestion timestamp'
-)
-USING DELTA
-COMMENT 'Silver Layer: Exploded and normalized volume pricing tier rules';
-"""
-spark.sql(silver_tiers_ddl)
-print(f"Provisioned table: {catalog_name}.{schema_name}.silver_ratecard_tier_rules")
+base_path = find_catalog_dirs()
+table_defs_path = os.path.join(base_path, "table_definitions")
+permissions_path = os.path.join(base_path, "permissions")
 
-# COMMAND ----------
+print(f"Resolved DDL Base Path: {base_path}")
 
-# MAGIC %md
-# MAGIC ### Cell 3: Deploy Gold Star Schema Tables DDL
-
-# COMMAND ----------
-
-dim_cust_ddl = f"""
-CREATE TABLE IF NOT EXISTS {catalog_name}.{schema_name}.dim_customer (
-    customer_key INT NOT NULL COMMENT 'Surrogate dimensional primary key (-1 represents Unknown)',
-    customer_id STRING NOT NULL COMMENT 'Business natural key',
-    customer_name STRING COMMENT 'Full customer organization name',
-    customer_tier STRING COMMENT 'Enterprise / Mid-Market / Standard tier',
-    billing_currency STRING COMMENT 'ISO currency code (USD, EUR, etc.)'
-)
-USING DELTA
-COMMENT 'Gold Layer: Conformed Customer dimension for cross-domain analytics';
-"""
-spark.sql(dim_cust_ddl)
-print(f"Provisioned table: {catalog_name}.{schema_name}.dim_customer")
-
-dim_part_ddl = f"""
-CREATE TABLE IF NOT EXISTS {catalog_name}.{schema_name}.dim_part (
-    part_key INT NOT NULL COMMENT 'Surrogate dimensional primary key (-1 represents Unknown)',
-    part_number STRING NOT NULL COMMENT 'Oracle ERP part number',
-    product_name STRING COMMENT 'Commercial product name',
-    uom STRING COMMENT 'Unit of measure (GB-Month, API-Calls, Seats)',
-    service_category STRING COMMENT 'Cloud Compute / Storage / Database service category'
-)
-USING DELTA
-COMMENT 'Gold Layer: Conformed Product/Part dimension for rating and billing';
-"""
-spark.sql(dim_part_ddl)
-print(f"Provisioned table: {catalog_name}.{schema_name}.dim_part")
-
-dim_pricing_ddl = f"""
-CREATE TABLE IF NOT EXISTS {catalog_name}.{schema_name}.dim_pricing_rule (
-    pricing_rule_key STRING NOT NULL COMMENT 'Surrogate key (SHA-256 hash)',
-    pricing_rule_id STRING NOT NULL COMMENT 'Source pricing rule identifier',
-    customer_key INT NOT NULL COMMENT 'Foreign key to dim_customer (-1 fallback for late-arriving dimensions)',
-    part_key INT NOT NULL COMMENT 'Foreign key to dim_part (-1 fallback for unmapped parts)',
-    subscription_id STRING COMMENT 'Subscription contract reference',
-    subscription_line_id STRING COMMENT 'Subscription line item reference',
-    date_start DATE NOT NULL COMMENT 'Rule validity start date',
-    date_end DATE NOT NULL COMMENT 'Rule validity end date',
-    is_current BOOLEAN NOT NULL COMMENT 'Dynamic SCD flag: CURRENT_DATE BETWEEN date_start AND date_end',
-    gold_created_at TIMESTAMP COMMENT 'ETL ingestion audit timestamp'
-)
-USING DELTA
-COMMENT 'Gold Layer: Pricing Rule Dimension with conformed dimension lookups';
-"""
-spark.sql(dim_pricing_ddl)
-print(f"Provisioned table: {catalog_name}.{schema_name}.dim_pricing_rule")
-
-dim_tiers_ddl = f"""
-CREATE TABLE IF NOT EXISTS {catalog_name}.{schema_name}.dim_ratecard_tiers (
-    tier_rule_key STRING NOT NULL COMMENT 'Unique surrogate tier identifier',
-    pricing_rule_key STRING NOT NULL COMMENT 'Foreign key to dim_pricing_rule',
-    pricing_rule_id STRING NOT NULL COMMENT 'Logical reference to pricing rule',
-    tier_number INT NOT NULL COMMENT 'Tier sequence number',
-    min_usage DECIMAL(18, 4) NOT NULL COMMENT 'Lower volume boundary',
-    max_usage DECIMAL(18, 4) NOT NULL COMMENT 'Upper volume boundary (unbounded sentinel: 999999999999.0)',
-    unit_price DECIMAL(18, 6) NOT NULL COMMENT 'Per-unit rate',
-    overage_price DECIMAL(18, 6) COMMENT 'Overage unit rate',
-    is_overage_applicable BOOLEAN COMMENT 'Overage applicability indicator',
-    dw_inserted_at TIMESTAMP COMMENT 'Data warehouse insert timestamp'
-)
-USING DELTA
-COMMENT 'Gold Layer: Exploded ratecard tier outrigger dimension for metered rating calculations';
-"""
-spark.sql(dim_tiers_ddl)
-print(f"Provisioned table: {catalog_name}.{schema_name}.dim_ratecard_tiers")
+def execute_sql_file(file_path, substitutions):
+    """Reads a .sql file, performs variable interpolation, and executes statements."""
+    filename = os.path.basename(file_path)
+    print(f"\n---> Executing: {filename}")
+    
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    
+    # Interpolate parameters (${catalog_name}, ${schema_name})
+    for var_name, var_value in substitutions.items():
+        content = content.replace(f"${{{var_name}}}", var_value)
+    
+    # Remove full-line comments and split into individual statements by semicolon
+    statements = [stmt.strip() for stmt in content.split(";") if stmt.strip()]
+    
+    executed_count = 0
+    for stmt in statements:
+        # Skip pure comment blocks
+        lines = [line.strip() for line in stmt.split("\n") if line.strip() and not line.strip().startswith("--")]
+        if not lines:
+            continue
+        
+        cleaned_stmt = "\n".join(lines)
+        first_line = lines[0][:80]
+        try:
+            spark.sql(cleaned_stmt)
+            print(f"  [OK] {first_line}...")
+            executed_count += 1
+        except Exception as e:
+            print(f"  [FAIL] Failed executing: {first_line}")
+            print(f"  Error details: {e}")
+            raise e
+            
+    print(f"Completed {filename} ({executed_count} statements executed successfully).")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Cell 4: Apply Schema-Level RBAC Inheritance Grants
+# MAGIC ### Cell 3: Execute Table Definitions (Silver & Gold)
 
 # COMMAND ----------
 
-# Grant catalog and schema-level inheritance
-spark.sql(f"GRANT USE CATALOG ON CATALOG {catalog_name} TO `account users`")
-spark.sql(f"GRANT USE SCHEMA ON SCHEMA {catalog_name}.{schema_name} TO `account users`")
-spark.sql(f"GRANT SELECT ON SCHEMA {catalog_name}.{schema_name} TO `account users`")
+substitutions = {
+    "catalog_name": catalog_name,
+    "schema_name": schema_name,
+    "env": env
+}
 
-print(f"Successfully applied schema-level RBAC grants on {catalog_name}.{schema_name} to `account users`")
+# 1. Run all table definition scripts in sorted order (01_silver, 02_gold, etc.)
+table_sql_files = sorted([
+    os.path.join(table_defs_path, f) 
+    for f in os.listdir(table_defs_path) 
+    if f.endswith(".sql")
+])
+
+for sql_file in table_sql_files:
+    execute_sql_file(sql_file, substitutions)
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC -- Verify tables and privileges
-# MAGIC SHOW TABLES IN ${catalog_name}.${schema_name};
+# MAGIC %md
+# MAGIC ### Cell 4: Execute RBAC Governance Grants
+
+# COMMAND ----------
+
+# 2. Run all permission scripts
+permission_sql_files = sorted([
+    os.path.join(permissions_path, f) 
+    for f in os.listdir(permissions_path) 
+    if f.endswith(".sql")
+])
+
+for sql_file in permission_sql_files:
+    execute_sql_file(sql_file, substitutions)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Cell 5: Deployment Verification
+
+# COMMAND ----------
+
+# Verify active catalog tables
+df_tables = spark.sql(f"SHOW TABLES IN {catalog_name}.{schema_name}")
+display(df_tables)
+print("\n=== Lakehouse Catalog Schema Deployment Complete ===")
