@@ -56,3 +56,4 @@ CREATE TABLE IF NOT EXISTS dim_ratecard_tiers (
 )
 USING DELTA
 COMMENT 'Gold Layer: Exploded ratecard tier outrigger dimension for metered rating calculations';
+

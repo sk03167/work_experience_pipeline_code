@@ -20,3 +20,4 @@ GRANT SELECT ON TABLE `${catalog_name}`.`${schema_name}`.dim_customer TO `accoun
 GRANT SELECT ON TABLE `${catalog_name}`.`${schema_name}`.dim_part TO `account users`;
 GRANT SELECT ON TABLE `${catalog_name}`.`${schema_name}`.dim_pricing_rule TO `account users`;
 GRANT SELECT ON TABLE `${catalog_name}`.`${schema_name}`.dim_ratecard_tiers TO `account users`;
+

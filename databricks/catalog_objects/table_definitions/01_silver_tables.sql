@@ -31,3 +31,4 @@ CREATE TABLE IF NOT EXISTS silver_ratecard_tier_rules (
 )
 USING DELTA
 COMMENT 'Silver Layer: Exploded and normalized volume pricing tier rules';
+
