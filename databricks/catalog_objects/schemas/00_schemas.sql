@@ -15,3 +15,4 @@ COMMENT 'Gold Layer: Business dimensional model, star schema, and aggregated met
 -- 3. Control & Metadata Schema (Audits & Incremental Watermarks)
 CREATE SCHEMA IF NOT EXISTS ${catalog_name}.control
 COMMENT 'Control Layer: Pipeline execution logs, ACID watermarks, and data quality metrics';
+
