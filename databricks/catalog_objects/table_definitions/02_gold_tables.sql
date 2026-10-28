@@ -1,10 +1,11 @@
 -- ==============================================================================
 -- Gold Layer Table Definitions (Dimensional Serving / Star Schema)
 -- Engine: Databricks Unity Catalog / Delta Lake
+-- Target: ${catalog_name}.gold.<table>
 -- ==============================================================================
 
 -- 1. Conformed Dimension: Customer
-CREATE TABLE IF NOT EXISTS dim_customer (
+CREATE TABLE IF NOT EXISTS ${catalog_name}.gold.dim_customer (
     customer_key INT NOT NULL COMMENT 'Surrogate dimensional primary key (-1 represents Unknown)',
     customer_id STRING NOT NULL COMMENT 'Business natural key',
     customer_name STRING COMMENT 'Full customer organization name',
@@ -15,7 +16,7 @@ USING DELTA
 COMMENT 'Gold Layer: Conformed Customer dimension for cross-domain analytics';
 
 -- 2. Conformed Dimension: Product Part
-CREATE TABLE IF NOT EXISTS dim_part (
+CREATE TABLE IF NOT EXISTS ${catalog_name}.gold.dim_part (
     part_key INT NOT NULL COMMENT 'Surrogate dimensional primary key (-1 represents Unknown)',
     part_number STRING NOT NULL COMMENT 'Oracle ERP part number',
     product_name STRING COMMENT 'Commercial product name',
@@ -26,7 +27,7 @@ USING DELTA
 COMMENT 'Gold Layer: Conformed Product/Part dimension for rating and billing';
 
 -- 3. Dimension: Pricing Rule (Header)
-CREATE TABLE IF NOT EXISTS dim_pricing_rule (
+CREATE TABLE IF NOT EXISTS ${catalog_name}.gold.dim_pricing_rule (
     pricing_rule_key STRING NOT NULL COMMENT 'Surrogate key (SHA-256 hash)',
     pricing_rule_id STRING NOT NULL COMMENT 'Source pricing rule identifier',
     customer_key INT NOT NULL COMMENT 'Foreign key to dim_customer (-1 fallback for late-arriving dimensions)',
@@ -42,7 +43,7 @@ USING DELTA
 COMMENT 'Gold Layer: Pricing Rule Dimension with conformed dimension lookups';
 
 -- 4. Outrigger Dimension: Ratecard Tiers
-CREATE TABLE IF NOT EXISTS dim_ratecard_tiers (
+CREATE TABLE IF NOT EXISTS ${catalog_name}.gold.dim_ratecard_tiers (
     tier_rule_key STRING NOT NULL COMMENT 'Unique surrogate tier identifier',
     pricing_rule_key STRING NOT NULL COMMENT 'Foreign key to dim_pricing_rule',
     pricing_rule_id STRING NOT NULL COMMENT 'Logical reference to pricing rule',
@@ -56,4 +57,3 @@ CREATE TABLE IF NOT EXISTS dim_ratecard_tiers (
 )
 USING DELTA
 COMMENT 'Gold Layer: Exploded ratecard tier outrigger dimension for metered rating calculations';
-

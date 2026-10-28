@@ -1,11 +1,11 @@
 {
 	"name": "pl_ratecard_master_orchestrator",
 	"properties": {
-		"description": "Master Pipeline orchestrating OLTP extraction, ADLS Bronze staging, and Databricks Silver/Gold execution with conformed dim lookups",
+		"description": "Master Pipeline orchestrating OLTP extraction, ADLS Bronze staging, and Databricks Silver/Gold execution with parameterized 3-level catalog namespaces",
 		"activities": [
 			{
 				"name": "act_copy_oltp_ratecard_to_bronze",
-				"description": "Reads delta changes from OLTP and writes directly to ADLS Gen2 Bronze parquet/delta staging",
+				"description": "Reads delta changes from OLTP and writes directly to ADLS Gen2 Bronze parquet staging",
 				"type": "Copy",
 				"dependsOn": [],
 				"policy": {
@@ -45,7 +45,8 @@
 				]
 			},
 			{
-				"name": "act_run_databricks_silver_gold_processing",
+				"name": "act_silver_transform",
+				"description": "Parses nested struct arrays, explodes tiers, calculates SHA-256 surrogate hashes, and persists to {catalog}.silver",
 				"type": "DatabricksNotebook",
 				"dependsOn": [
 					{
@@ -72,6 +73,54 @@
 						"env": {
 							"value": "@pipeline().parameters.p_environment",
 							"type": "Expression"
+						},
+						"catalog_name": {
+							"value": "@pipeline().parameters.p_catalog_name",
+							"type": "Expression"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "ls_azure_databricks",
+					"type": "LinkedServiceReference",
+					"parameters": {
+						"DATABRICKS_URL": "https://adb-7405615524664227.7.azuredatabricks.net"
+					}
+				}
+			},
+			{
+				"name": "act_gold_star_schema_load",
+				"description": "Performs conformed dimension surrogate key lookups (-1 unknown fallback), builds Gold Star Schema, and commits ACID Delta watermark",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "act_silver_transform",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Users/sk03167@gmail.com/work_experience_pipeline_code/databricks/notebooks/03_gold_star_schema_load",
+					"baseParameters": {
+						"execution_date": {
+							"value": "@utcnow()",
+							"type": "Expression"
+						},
+						"env": {
+							"value": "@pipeline().parameters.p_environment",
+							"type": "Expression"
+						},
+						"catalog_name": {
+							"value": "@pipeline().parameters.p_catalog_name",
+							"type": "Expression"
 						}
 					}
 				},
@@ -91,7 +140,11 @@
 			},
 			"p_environment": {
 				"type": "string",
-				"defaultValue": "prod"
+				"defaultValue": "dev"
+			},
+			"p_catalog_name": {
+				"type": "string",
+				"defaultValue": "adb_ratecard_dev_001"
 			}
 		},
 		"annotations": []

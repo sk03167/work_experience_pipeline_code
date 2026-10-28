@@ -4,15 +4,16 @@
 # MAGIC
 # MAGIC **Author:** Shivansh Kumar (Senior Data Engineer)  
 # MAGIC **Layer:** Silver (Curated / Metastore Catalog Tables)  
+# MAGIC **Namespace:** `${catalog_name}.silver.<table>`
 # MAGIC
 # MAGIC ### Overview:
 # MAGIC 1. Ingests raw ratecard batches landed from OLTP into ADLS Gen2 Bronze container.
 # MAGIC 2. Parses serialized JSON struct strings into native Spark ArrayType(StructType).
 # MAGIC 3. Unrolls / Explodes tiers into discrete interval records with surrogate hashing (`SHA-256`).
 # MAGIC 4. Validates boundary conditions (`min_usage < max_usage`) and preserves unbounded tier sentinels (`999999999999.0`).
-# MAGIC 5. Commits to Databricks Metastore Catalog tables:
-# MAGIC    - `silver_ratecard_rules`
-# MAGIC    - `silver_ratecard_tier_rules`
+# MAGIC 5. Commits to governed 3-level Unity Catalog tables:
+# MAGIC    - `${catalog_name}.silver.silver_ratecard_rules`
+# MAGIC    - `${catalog_name}.silver.silver_ratecard_tier_rules`
 
 # COMMAND ----------
 
@@ -32,13 +33,16 @@ from pyspark.sql.types import (
 try:
     dbutils.widgets.text("execution_date", "", "Execution Date")
     dbutils.widgets.text("env", "dev", "Environment")
+    dbutils.widgets.text("catalog_name", "adb_ratecard_dev_001", "Unity Catalog Name")
     execution_date = dbutils.widgets.get("execution_date")
     env = dbutils.widgets.get("env")
+    catalog_name = dbutils.widgets.get("catalog_name")
 except Exception:
     execution_date = "2024-10-26"
     env = "dev"
+    catalog_name = "adb_ratecard_dev_001"
 
-print(f"Running Silver Transform | Env: {env} | Date: {execution_date}")
+print(f"Running Silver Transform | Catalog: {catalog_name} | Env: {env} | Date: {execution_date}")
 
 # Tier Struct Schema for parsing serialized JSON
 TierPricingStructSchema = ArrayType(StructType([
@@ -61,12 +65,8 @@ TierPricingStructSchema = ArrayType(StructType([
 STORAGE_ACCOUNT = "stlakehousedevsk01"
 bronze_path = f"abfss://bronze@{STORAGE_ACCOUNT}.dfs.core.windows.net/subscription_ratecard_rules"
 
-try:
-    df_bronze_raw = spark.read.parquet(bronze_path)
-    print(f"Successfully read from ADLS Gen2 Bronze: {df_bronze_raw.count()} records.")
-except Exception as e:
-    print(f"Direct ABFSS read error: {e}. Trying DBFS / Staging fallback...")
-    df_bronze_raw = spark.read.parquet("/mnt/bronze/subscription_ratecard_rules")
+df_bronze_raw = spark.read.parquet(bronze_path)
+print(f"Successfully read from ADLS Gen2 Bronze: {df_bronze_raw.count()} records.")
 
 display(df_bronze_raw.limit(5))
 
@@ -177,44 +177,47 @@ df_silver_tiers = spark.table("vw_exploded_tiers_staged").select(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Cell 6: Persist as Managed Catalog Tables
+# MAGIC ### Cell 6: Persist as Governed 3-Level Namespace Tables
 
 # COMMAND ----------
 
-# Save Rule Headers to Metastore
+target_silver_rules = f"{catalog_name}.silver.silver_ratecard_rules"
+target_silver_tiers = f"{catalog_name}.silver.silver_ratecard_tier_rules"
+
+# Save Rule Headers (3-Level Namespace)
 (
     df_silver_rules.write
     .format("delta")
     .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable("silver_ratecard_rules")
+    .saveAsTable(target_silver_rules)
 )
-print(f"Successfully saved {df_silver_rules.count()} rows to catalog table: silver_ratecard_rules")
+print(f"Successfully saved {df_silver_rules.count()} rows to: {target_silver_rules}")
 
-# Save Exploded Tiers to Metastore
+# Save Exploded Tiers (3-Level Namespace)
 (
     df_silver_tiers.write
     .format("delta")
     .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable("silver_ratecard_tier_rules")
+    .saveAsTable(target_silver_tiers)
 )
-print(f"Successfully saved {df_silver_tiers.count()} rows to catalog table: silver_ratecard_tier_rules")
+print(f"Successfully saved {df_silver_tiers.count()} rows to: {target_silver_tiers}")
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC -- Visual audit query
-# MAGIC SELECT 
-# MAGIC     r.pricing_rule_id,
-# MAGIC     r.customer_id,
-# MAGIC     r.part_number,
-# MAGIC     t.tier_number,
-# MAGIC     t.min_usage,
-# MAGIC     t.max_usage,
-# MAGIC     t.unit_price,
-# MAGIC     t.overage_price
-# MAGIC FROM silver_ratecard_rules r
-# MAGIC JOIN silver_ratecard_tier_rules t ON r.pricing_rule_id = t.pricing_rule_id
-# MAGIC ORDER BY r.pricing_rule_id, t.tier_number
-# MAGIC LIMIT 10;
+# Visual audit query with 3-level namespace
+df_audit = spark.sql(f"""
+SELECT 
+    r.pricing_rule_id,
+    r.customer_id,
+    r.part_number,
+    t.tier_number,
+    t.min_usage,
+    t.max_usage,
+    t.unit_price,
+    t.overage_price
+FROM {target_silver_rules} r
+JOIN {target_silver_tiers} t ON r.pricing_rule_id = t.pricing_rule_id
+ORDER BY r.pricing_rule_id, t.tier_number
+LIMIT 10
+""")
+display(df_audit)

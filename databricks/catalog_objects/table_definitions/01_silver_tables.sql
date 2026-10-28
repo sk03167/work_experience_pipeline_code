@@ -1,10 +1,11 @@
 -- ==============================================================================
 -- Silver Layer Table Definitions (Cleansed, Structured & Exploded Tiers)
 -- Engine: Databricks Unity Catalog / Delta Lake
+-- Target: ${catalog_name}.silver.<table>
 -- ==============================================================================
 
 -- 1. Cleansed Ratecard Rules Header Table
-CREATE TABLE IF NOT EXISTS silver_ratecard_rules (
+CREATE TABLE IF NOT EXISTS ${catalog_name}.silver.silver_ratecard_rules (
     pricing_rule_id STRING NOT NULL COMMENT 'Natural primary key from OLTP pricing rule',
     customer_id STRING NOT NULL COMMENT 'Customer identifier for dimensional joins',
     part_number STRING NOT NULL COMMENT 'Oracle/ERP Product part number',
@@ -18,7 +19,7 @@ USING DELTA
 COMMENT 'Silver Layer: Cleansed and deduplicated subscription ratecard headers';
 
 -- 2. Exploded Ratecard Tier Rules Table
-CREATE TABLE IF NOT EXISTS silver_ratecard_tier_rules (
+CREATE TABLE IF NOT EXISTS ${catalog_name}.silver.silver_ratecard_tier_rules (
     tier_rule_id STRING NOT NULL COMMENT 'Surrogate SHA-256 hash (pricing_rule_id || tier_number)',
     pricing_rule_id STRING NOT NULL COMMENT 'Foreign key to silver_ratecard_rules',
     tier_number INT NOT NULL COMMENT 'Sequential tier index (1, 2, 3...)',
@@ -31,4 +32,3 @@ CREATE TABLE IF NOT EXISTS silver_ratecard_tier_rules (
 )
 USING DELTA
 COMMENT 'Silver Layer: Exploded and normalized volume pricing tier rules';
-
