@@ -160,3 +160,9 @@ for sql_file in permission_sql_files:
 df_tables = spark.sql(f"SHOW TABLES IN {catalog_name}.{schema_name}")
 display(df_tables)
 print("\n=== Lakehouse Catalog Schema Deployment Complete ===")
+
+# Verify active catalog tables
+df_tables = spark.sql(f"SHOW TABLES IN {catalog_name}.{schema_name}")
+display(df_tables)
+print("\n=== Lakehouse Catalog Schema Deployment Complete ===")
+
