@@ -16,3 +16,4 @@ CREATE TABLE IF NOT EXISTS ${catalog_name}.control.pipeline_watermark_control (
 )
 USING DELTA
 COMMENT 'Control Layer: ACID delta watermark tracking and audit history';
+
